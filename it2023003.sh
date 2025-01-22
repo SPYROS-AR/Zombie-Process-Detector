@@ -25,19 +25,26 @@ trap cleanup SIGINT SIGTERM
 # Start the script
 
 #Compile the C program
-echo "Compiling $C_FILE ..."
-gcc "$C_FILE" -pthread -o "$OUTPUT_FILE"
+if [ ! -e "$OUTPUT_FILE" ];
+then
+    echo "Compiling $C_FILE ..."
+    gcc "$C_FILE" -pthread -o "$OUTPUT_FILE"
 
-if [ $? -ne 0 ]; then
-    echo "Compilation failed."
-    exit 1
-else
-    echo "Compilation successful."
+    if [ $? -ne 0 ]; then
+        echo "Compilation failed."
+        exit 1
+    else
+        echo "Compilation successful."
+        sleep 5
+        clear
+    fi
 fi
+
 
 # Main loop
 while true; do
     {
+        
         # Capture the top 10 processes by CPU usage
         ps -eo pid,pcpu,pmem,rss,vsize,stat,ppid --sort=-%cpu | head -11 > "$LOG_FILE"
 
