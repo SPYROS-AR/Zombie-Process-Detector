@@ -23,13 +23,8 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
-#include <sys/types.h>
-#include <sys/syscall.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 #include <fcntl.h>
 #include <string.h>
-#include <signal.h>
 
 #define NUM_THREADS 10
 
@@ -103,19 +98,6 @@ void change_glb_variables(char* cpu, char* mem, char* rss, char* vsz){
     averageRSS += (float)rss_pages / NUM_THREADS;
     averageVSZ += (float)vsz_pages / NUM_THREADS;
 }
-void kill_zombie(char* ppid){
-    pid_t ppid_int = atoi(ppid);
-    if (ppid_int == 0)
-    {
-        perror("Failed to send SIGKILL");
-        return;
-    }
-    if (kill(ppid_int, SIGKILL) == 0) {
-        printf("Successfully sent SIGKILL to process %d\n", ppid_int);
-    } else {
-        perror("Failed to send SIGKILL");
-    }
-}
 
 void *thread_function(void *arg){
 
@@ -141,21 +123,14 @@ void *thread_function(void *arg){
             if (col == 7) ppid = token; // PPPID column
             token = strtok(NULL, " \t");
         }
-
+        // change global varibales 
         pthread_mutex_lock(params->variable_mutex);
         change_glb_variables(cpu, mem, rss, vsz);
         pthread_mutex_unlock(params->variable_mutex);
 
-        //process the stat string
-        if (stat != NULL && strchr(stat, 'Z')) {
-            printf("ZOMBIE PROCESS ALARM: parent process to kill: %s\n", ppid); // the parent process must be killed
-            kill_zombie(ppid);
-        }
-
         printf("Stats for pid: %s, RSS pages: %s, VSZ pages: %s \n", pid, rss, vsz );
 
-        
-
+    
         free(line); // Free the dynamically allocated line buffer
     
     free(params);

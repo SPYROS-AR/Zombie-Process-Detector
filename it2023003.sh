@@ -44,16 +44,36 @@ fi
 # Main loop
 while true; do
     {
-        
-        # Capture the top 10 processes by CPU usage
-        ps -eo pid,pcpu,pmem,rss,vsize,stat,ppid --sort=-%cpu | head -11 > "$LOG_FILE"
+    #find any zombie processes that may exist
+    echo "Checking for zombie processes..."
+    
+    # Find zombie processes
+    zombies=$(ps -eo pid,ppid,stat,comm | awk '$3 ~ /Z/ {print $1, $2}')
+    if [[ -z "$zombies" ]]; then
+        echo "No zombie processes found."
+    else
+    while read -r pid ppid; do
+        echo "ZOMBIE PROCESS ALARM: parent process to kill: $ppid"
+        if ps -p "$ppid" > /dev/null 2>&1; then
+        kill -9 "$ppid"      
+            if [[ $? -eq 0 ]]; then
+                echo "Successfully killed parent process (PID: $ppid)."
+            else
+                echo "Failed to kill parent process (PID: $ppid)."
+            fi
+        # else
+        # echo "Parent process (PID: $ppid) is no longer running. Zombie should be cleaned up automatically."
+        fi
+    done <<< "zombies"
+    fi
+    # Capture the top 10 processes by CPU usage
+    ps -eo pid,pcpu,pmem,rss,vsize,stat,ppid --sort=-%cpu | head -11 > "$LOG_FILE"
 
 
-        echo "Running output file at $(date)"
-        ./"$OUTPUT_FILE" &
-        PID=$! #get pid of the ouput file while it is still running
-        echo $PID #DEBUGGING REMOVE LATER
-        wait "$PID" #wait for the proccess to stop running
+    echo "Running output file at $(date)"
+    ./"$OUTPUT_FILE" &
+    PID=$! #get pid of the ouput file while it is still running
+    wait "$PID" #wait for the proccess to stop running
         
     }
     # Wait for 30 seconds before the next iteration
