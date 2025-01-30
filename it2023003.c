@@ -1,5 +1,5 @@
 /*
- * Project assigment for the course Operating Systems at the Harokopio University of Athens
+ * Project assignment for the course Operating Systems at the Harokopio University of Athens
  * 
  *
  *
@@ -29,22 +29,20 @@
 #define NUM_THREADS 10
 
 
-
 // Define page_size as a constant
-#define page_size (sysconf(_SC_PAGESIZE)/1024 )
+#define page_size (sysconf(_SC_PAGESIZE))
 
-// golbal variables for metrics 
+// global variables for metrics 
 float totalCPU = 0.0;
 float totalMEM = 0.0;
-float averageRSS = 0;
-float averageVSZ = 0;
+int totalRSS = 0.0;
+int totalVSZ = 0.0;
 
 
 typedef struct {
     int file;                        // File 
     pthread_mutex_t* file_mutex;     // Mutex lock for the file
     pthread_mutex_t* variable_mutex; // Mutex lock for the global variables
-    int lineNumber;                  // line that will be read by thread
 } ThreadParams;
 
 char* read_line(ThreadParams* params){
@@ -85,18 +83,14 @@ char* read_line(ThreadParams* params){
         return line;
     }    
 }
-void change_glb_variables(char* cpu, char* mem, char* rss, char* vsz){
+void change_glb_variables(char* cpu, char* mem, int rss, int vsz){
     //convert string to float
     totalCPU = totalCPU + atof(cpu);
     totalMEM = totalMEM + atof(mem);
     
-    // Divide the values by page size
-    int rss_pages = (atoi(rss) / page_size);
-    int vsz_pages = (atoi(vsz) / page_size);
-
-    // Update running averages
-    averageRSS += (float)rss_pages / NUM_THREADS;
-    averageVSZ += (float)vsz_pages / NUM_THREADS;
+    //add thread rss & vsz to total
+    totalRSS += (rss);
+    totalVSZ += (vsz);
 }
 
 void *thread_function(void *arg){
@@ -105,34 +99,38 @@ void *thread_function(void *arg){
     char *pid = NULL, *stat = NULL, *ppid = NULL;
     char *cpu = NULL, *mem = NULL;
     char *rss = NULL, *vsz = NULL;
-        pthread_mutex_lock(params->file_mutex);
-        char* line = read_line(params); 
-        pthread_mutex_unlock(params->file_mutex);
 
-        // Divide the line to its componets
-        char *token = strtok(line, " \t");
-        int col = 0;
-        while (token != NULL) {
-            col++;
-            if (col == 1) pid = token;  // PID column
-            if (col == 2) cpu = token;  // CPU column
-            if (col == 3) mem = token;  // Memory column
-            if (col == 4) rss = token;  // RSS column
-            if (col == 5) vsz = token;  // VRZ column
-            if (col == 6) stat = token; // STAT column
-            if (col == 7) ppid = token; // PPPID column
-            token = strtok(NULL, " \t");
-        }
-        // change global varibales 
-        pthread_mutex_lock(params->variable_mutex);
-        change_glb_variables(cpu, mem, rss, vsz);
-        pthread_mutex_unlock(params->variable_mutex);
+    // read a single line from the txt file
+    pthread_mutex_lock(params->file_mutex);
+    char* line = read_line(params); 
+    pthread_mutex_unlock(params->file_mutex);
 
-        printf("Stats for pid: %s, RSS pages: %s, VSZ pages: %s \n", pid, rss, vsz );
+    // Divide the line to its components
+    char *token = strtok(line, " \t");
+    int col = 0;
+    while (token != NULL) {
+        col++;
+        if (col == 1) pid = token;  // PID column
+        if (col == 2) cpu = token;  // CPU column
+        if (col == 3) mem = token;  // Memory column
+        if (col == 4) rss = token;  // RSS column
+        if (col == 5) vsz = token;  // VRZ column
+        if (col == 6) stat = token; // STAT column
+        if (col == 7) ppid = token; // PPPID column
+        token = strtok(NULL, " \t");
+    }
+    int int_rss = atoi(rss);
+    int int_vsz = atoi(vsz);
 
-    
-        free(line); // Free the dynamically allocated line buffer
-    
+    // change global variables 
+    pthread_mutex_lock(params->variable_mutex);
+    change_glb_variables(cpu, mem, int_rss, int_vsz);
+    pthread_mutex_unlock(params->variable_mutex);
+
+    printf("Stats for pid: %7s, RSS pages: %9ld, VSZ pages: %ld \n", pid, int_rss/(page_size/1024), int_vsz/(page_size/1024));
+
+
+    free(line); // Free the dynamically allocated line buffer
     free(params);
     return NULL;
 }
@@ -141,8 +139,8 @@ int main(void){
     pthread_mutex_t glb_variable_mutex = PTHREAD_MUTEX_INITIALIZER;
     pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+    printf("\nRetrieving top 10 processes\n");
 
-    printf("\n\n\nRetrieving top 10 proccesses\n");
     int fd;
     if ((fd=open("processes.txt", O_RDONLY))==-1)
 	{
@@ -158,18 +156,23 @@ int main(void){
     }
     pthread_t threads[NUM_THREADS]; // array of threads
     printf("Current top 10 resource metrics:\n");
+
     for (int i = 0; i < NUM_THREADS; i++){
         ThreadParams* params = malloc(sizeof(ThreadParams)); 
         params->file = fd;
         params->file_mutex = &file_mutex;
         params->variable_mutex = &glb_variable_mutex;
-        params->lineNumber = i + 1;
-        pthread_create(&threads[i], NULL, thread_function, params);
+        if (pthread_create(&threads[i], NULL, thread_function, params) !=0 ) {
+            fprintf(stderr, "Error: pthread_create failed\nExiting the program!\n");
+            exit(1);
+        }
     }
+
     for (int i = 0; i < NUM_THREADS; i++){
         pthread_join(threads[i], NULL);
     }
-    printf("\nSUM CPU%%: %.2f\nSUM MEM%%: %.2f\nRSS AVERAGE: %.2f\nVSS AVERAGE: %.2f\n", totalCPU, totalMEM, averageRSS, averageVSZ);
+
+    printf("\nSUM CPU%%: %.2f%%\nSUM MEM%%: %.2f%%\nRSS AVERAGE: %d\nVSS AVERAGE: %d\n", totalCPU, totalMEM, totalRSS/NUM_THREADS, totalVSZ/NUM_THREADS);
     close(fd);
     return 0;
 }
